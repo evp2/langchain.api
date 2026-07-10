@@ -1,0 +1,47 @@
+spring:
+  application:
+    name: langchain.api
+
+server:
+  port: 8080
+
+# ---- Swagger / OpenAPI ----
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+# ---- AWS Bedrock (Anthropic application inference profiles) ----
+# Each review sub-agent is configured independently. By default every agent uses the shared
+# INFERENCE_PROFILE_ARN, but any agent can be pointed at a different profile / tuned separately
+# via its own env vars (e.g. RISK_INFERENCE_PROFILE_ARN, SYNTHESIZER_TEMPERATURE) or by editing
+# the values below. Export INFERENCE_PROFILE_ARN before starting the app.
+bedrock:
+  region: ${AWS_REGION:us-east-1}
+  risk:
+    model-arn: ${RISK_INFERENCE_PROFILE_ARN:${INFERENCE_PROFILE_ARN}}
+    temperature: ${RISK_TEMPERATURE:0.2}
+    max-output-tokens: ${RISK_MAX_OUTPUT_TOKENS:4096}
+  configuration:
+    model-arn: ${CONFIGURATION_INFERENCE_PROFILE_ARN:${INFERENCE_PROFILE_ARN}}
+    temperature: ${CONFIGURATION_TEMPERATURE:0.2}
+    max-output-tokens: ${CONFIGURATION_MAX_OUTPUT_TOKENS:4096}
+  traceability:
+    model-arn: ${TRACEABILITY_INFERENCE_PROFILE_ARN:${INFERENCE_PROFILE_ARN}}
+    temperature: ${TRACEABILITY_TEMPERATURE:0.2}
+    max-output-tokens: ${TRACEABILITY_MAX_OUTPUT_TOKENS:4096}
+  synthesizer:
+    model-arn: ${SYNTHESIZER_INFERENCE_PROFILE_ARN:${INFERENCE_PROFILE_ARN}}
+    temperature: ${SYNTHESIZER_TEMPERATURE:0.3}
+    max-output-tokens: ${SYNTHESIZER_MAX_OUTPUT_TOKENS:4096}
+
+# ---- Review orchestration ----
+review:
+  # Hard cap on diff characters sent to the models (protects against huge PRs).
+  max-diff-chars: 60000
+  # Overall timeout for a single review request.
+  timeout-seconds: 240
+
+# GitHub token is read from the GITHUB_TOKEN / GH_TOKEN environment variable at runtime
+# (optional for public repos, required for private repos and to avoid low rate limits).
