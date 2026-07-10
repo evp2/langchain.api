@@ -3,6 +3,8 @@ package com.github.evp2.langchain_api.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.ProxySelector;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -29,10 +31,7 @@ public class GitHubPrService {
     private static final Pattern PR_URL = Pattern.compile(
             "github\\.com/([^/\\s]+)/([^/\\s]+)/pull/(\\d+)");
 
-    private final HttpClient http = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(15))
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
+    private final HttpClient http = buildClient();
     // Jackson 2 (bundled via langchain4j) — Spring Boot 4's managed ObjectMapper is Jackson 3.
     private final ObjectMapper mapper = new ObjectMapper();
     private final int maxDiffChars;
@@ -45,6 +44,28 @@ public class GitHubPrService {
             t = System.getenv("GH_TOKEN");
         }
         this.token = (t == null || t.isBlank()) ? null : t.trim();
+    }
+
+    /**
+     * GitHub is external, so on a corporate network it is only reachable through the egress proxy.
+     * Bedrock (*.amazonaws.com) is in NO_PROXY and must stay direct, so the proxy is scoped to this
+     * client rather than set as a JVM-wide default. Honors the standard HTTPS_PROXY / https_proxy env var.
+     */
+    private static HttpClient buildClient() {
+        HttpClient.Builder b = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(15))
+                .followRedirects(HttpClient.Redirect.NORMAL);
+        String proxy = System.getenv("HTTPS_PROXY");
+        if (proxy == null || proxy.isBlank()) {
+            proxy = System.getenv("https_proxy");
+        }
+        if (proxy != null && !proxy.isBlank()) {
+            URI u = URI.create(proxy.trim());
+            int port = u.getPort() != -1 ? u.getPort() : 443;
+            b.proxy(ProxySelector.of(new InetSocketAddress(u.getHost(), port)));
+            log.info("GitHub client using HTTPS proxy {}:{}", u.getHost(), port);
+        }
+        return b.build();
     }
 
     /** Parse the PR URL, then fetch its metadata and diff. */

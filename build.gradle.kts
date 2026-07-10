@@ -31,6 +31,11 @@ dependencies {
     implementation("dev.langchain4j:langchain4j:$langchain4jVersion")
     implementation("dev.langchain4j:langchain4j-bedrock:$langchain4jVersion")
 
+    // STS: used at startup to verify AWS credentials resolve and are not expired (GetCallerIdentity).
+    implementation("software.amazon.awssdk:sts:2.41.34")
+    // Apache HTTP client: configured with a widened socket-read timeout for slow Bedrock responses.
+    implementation("software.amazon.awssdk:apache-client:2.41.34")
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

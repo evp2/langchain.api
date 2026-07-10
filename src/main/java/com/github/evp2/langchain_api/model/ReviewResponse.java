@@ -39,7 +39,7 @@ public record ReviewResponse(
      * Metadata about how the review was run.
      *
      * @param agentModels    resolved Bedrock model id per sub-agent (risk, configuration,
-     *                       traceability, synthesizer) — each independently configurable
+     *                       observability, synthesizer) — each independently configurable
      * @param changedFiles   number of files changed in the PR
      * @param diffTruncated  whether the diff was truncated before analysis
      * @param durationMillis wall-clock duration of the review

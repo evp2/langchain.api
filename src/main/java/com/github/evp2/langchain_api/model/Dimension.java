@@ -6,6 +6,6 @@ public enum Dimension {
     CHANGE_RISK,
     /** CFG: config issues, environment mismatches. */
     CONFIGURATION,
-    /** TRA: logging, tracing, monitoring gaps. */
+    /** ORA: logging, tracing, monitoring gaps. */
     OBSERVABILITY
 }

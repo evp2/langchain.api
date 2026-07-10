@@ -1,6 +1,5 @@
 package com.github.evp2.langchain_api.ai;
 
-import com.github.evp2.langchain_api.model.Synthesis;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.V;
@@ -34,6 +33,23 @@ public interface Synthesizer {
 
             Be decisive and evidence-based. Do not soften a CRITICAL. Do not manufacture risk where the diff is
             benign.
+
+            Respond with ONLY a raw JSON object in exactly this shape — no prose, no markdown, no code fences:
+            {
+              "verdict": "GO | CONDITIONAL | NO_GO",
+              "executiveSummary": "2-4 sentence summary a reviewer can act on",
+              "prioritizedFindings": [
+                {
+                  "id": "CHR-001",
+                  "severity": "CRITICAL | HIGH | MEDIUM | LOW",
+                  "title": "one-line summary",
+                  "description": "what the issue is and why it matters in production",
+                  "file": "path/to/file",
+                  "recommendation": "concrete remediation"
+                }
+              ]
+            }
+            Use an empty prioritizedFindings array if there are no findings.
             """)
     @UserMessage("""
             Repository: {{repo}}
@@ -45,14 +61,14 @@ public interface Synthesizer {
             Configuration (CFG) analysis JSON:
             {{cfg}}
 
-            Observability (TRA) analysis JSON:
-            {{tra}}
+            Observability (ORA) analysis JSON:
+            {{ora}}
             """)
-    Synthesis synthesize(
+    String synthesize(
             @V("repo") String repo,
             @V("number") int number,
             @V("title") String title,
             @V("chr") String changeRiskJson,
             @V("cfg") String configurationJson,
-            @V("tra") String traceabilityJson);
+            @V("ora") String observabilityJson);
 }

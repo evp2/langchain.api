@@ -1,6 +1,5 @@
 package com.github.evp2.langchain_api.ai;
 
-import com.github.evp2.langchain_api.model.DimensionAnalysis;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.V;
@@ -33,6 +32,22 @@ public interface RiskAnalyst {
             Give each finding a stable id prefixed "CHR-" (CHR-001, CHR-002, ...). Reference the specific file.
             Make recommendations concrete and actionable. If the diff is low-risk, return few or no findings —
             do not invent problems. Base every finding strictly on evidence in the diff.
+
+            Respond with ONLY a raw JSON object in exactly this shape — no prose, no markdown, no code fences:
+            {
+              "summary": "short narrative assessment of change-risk",
+              "findings": [
+                {
+                  "id": "CHR-001",
+                  "severity": "CRITICAL | HIGH | MEDIUM | LOW",
+                  "title": "one-line summary",
+                  "description": "what the issue is and why it matters in production",
+                  "file": "path/to/file",
+                  "recommendation": "concrete remediation"
+                }
+              ]
+            }
+            Use an empty findings array if there are no findings.
             """)
     @UserMessage("""
             Repository: {{repo}}
@@ -43,7 +58,7 @@ public interface RiskAnalyst {
             {{diff}}
             ------------------------------------------------------------
             """)
-    DimensionAnalysis analyze(
+    String analyze(
             @V("repo") String repo,
             @V("number") int number,
             @V("title") String title,
