@@ -1,8 +1,9 @@
 package com.github.evp2.langchain_api.controller;
 
 import com.github.evp2.langchain_api.model.ErrorResponse;
-import com.github.evp2.langchain_api.model.ReviewResponse;
-import com.github.evp2.langchain_api.service.CodeReviewService;
+import com.github.evp2.langchain_api.model.ModelChoice;
+import com.github.evp2.langchain_api.model.ReviewJob;
+import com.github.evp2.langchain_api.service.ReviewJobService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -11,47 +12,76 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.NotBlank;
+import java.net.URI;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** REST endpoint that runs a resiliency code review for a GitHub pull request. */
+/**
+ * Asynchronous resiliency code review for a GitHub pull request. A full review runs three
+ * specialists plus a synthesizer and can take minutes, so the work runs off the request thread:
+ * submit returns a job immediately and the caller polls for the result.
+ */
 @RestController
 @RequestMapping("/api/v1")
 @Validated
 @Tag(name = "Code Review", description = "Resiliency-focused, multi-agent review of a GitHub pull request.")
 public class CodeReviewController {
 
-    private final CodeReviewService service;
+    private final ReviewJobService jobs;
 
-    public CodeReviewController(CodeReviewService service) {
-        this.service = service;
+    public CodeReviewController(ReviewJobService jobs) {
+        this.jobs = jobs;
     }
 
     @Operation(
-            summary = "Review a GitHub pull request",
+            summary = "Submit a GitHub pull request for review",
             description = """
-                    Runs the change-risk, configuration, and observability specialists (plus a synthesizer) over
-                    the PR diff using Claude models on AWS Bedrock, and returns a GO / CONDITIONAL / NO_GO verdict
-                    with prioritized findings. This call is synchronous and may take up to a couple of minutes.""")
+                    Starts an asynchronous review (change-risk, configuration, and observability specialists plus a
+                    synthesizer) over the PR diff using Claude models on AWS Bedrock. Returns 202 immediately with a
+                    job id; poll GET /api/v1/analyze-pr/{jobId} for status and, once SUCCEEDED, the full report.""")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Review completed"),
+            @ApiResponse(responseCode = "202", description = "Review accepted; poll the returned job"),
             @ApiResponse(responseCode = "400", description = "Malformed PR URL",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-            @ApiResponse(responseCode = "404", description = "PR not found or not accessible",
-                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-            @ApiResponse(responseCode = "502", description = "Model/backend failure",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
-    @PostMapping("/reviews")
-    public ReviewResponse review(
+    @PostMapping("/analyze-pr")
+    public ResponseEntity<ReviewJob> submit(
             @Parameter(
                     description = "Full GitHub pull request URL",
-                    example = "https://github.com/octocat/Hello-World/pull/1",
+                    example = "https://github.com/Vanguard/resiliency-agent.ecs/pull/228",
                     required = true)
-            @RequestParam("prUrl") @NotBlank String prUrl) {
-        return service.review(prUrl);
+            @RequestParam("prUrl") @NotBlank String prUrl,
+            @Parameter(description = "Which model backend to invoke")
+            @RequestParam(value = "model", defaultValue = "CLAUDE_SONNET") ModelChoice model) {
+        ReviewJob job = jobs.submit(prUrl, model);
+        return ResponseEntity
+                .accepted()
+                .location(URI.create("/api/v1/analyze-pr/" + job.jobId()))
+                .body(job);
+    }
+
+    @Operation(
+            summary = "Get the status/result of a review job",
+            description = """
+                    Returns the job's current state. While PENDING/RUNNING, result is null; once SUCCEEDED the full
+                    review report is in `result`; if FAILED, `error` explains why.""")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Job found"),
+            @ApiResponse(responseCode = "404", description = "No such job",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/analyze-pr/{jobId}")
+    public ResponseEntity<ReviewJob> status(
+            @Parameter(description = "Job id returned by the submit call", required = true)
+            @PathVariable("jobId") String jobId) {
+        return jobs.get(jobId)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 }

@@ -1,0 +1,21 @@
+{
+  "summary": "Live credentials are committed directly into the repository in both application.yml and the Dockerfile.",
+  "findings": [
+    {
+      "id": "CFG-001",
+      "severity": "CRITICAL",
+      "title": "Live payment API key committed to source control",
+      "description": "payments.provider.api-key was changed from an environment placeholder to a literal sk_live_ key, exposing production payment credentials to anyone with repo access.",
+      "file": "src/main/resources/application.yml",
+      "recommendation": "Revert to ${PAYMENTS_API_KEY}, rotate the exposed key immediately, and purge it from git history."
+    },
+    {
+      "id": "CFG-002",
+      "severity": "CRITICAL",
+      "title": "AWS secret access key hardcoded in configuration",
+      "description": "aws.secret-access-key is committed in plain text.",
+      "file": "src/main/resources/application.yml",
+      "recommendation": "Remove the key, rotate it, and rely on the default credential chain."
+    }
+  ]
+}

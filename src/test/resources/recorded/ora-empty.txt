@@ -1,0 +1,4 @@
+{
+  "summary": "Documentation-only change; no logging, metrics, tracing, or alerting surface is affected.",
+  "findings": []
+}

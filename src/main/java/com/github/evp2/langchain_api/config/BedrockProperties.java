@@ -1,13 +1,11 @@
 package com.github.evp2.langchain_api.config;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * Bedrock configuration bound from the {@code bedrock.*} section of {@code application.yml}.
  *
- * <p>Each review sub-agent (risk, configuration, traceability, synthesizer) has its own
+ * <p>Each review sub-agent (risk, configuration, observability, synthesizer) has its own
  * {@link Agent} block, so its model ARN, temperature, and max output tokens can be tuned
  * independently — in YAML or via the per-agent environment variables the YAML references.
  */
@@ -17,10 +15,25 @@ public class BedrockProperties {
     /** AWS region for the Bedrock runtime client (shared by all agents). */
     private String region = "us-east-1";
 
+    /**
+     * Per-call timeout for a single Bedrock invocation. Must exceed the slowest model's latency:
+     * the SDK default is 60s, but a large-diff Nemotron completion can run longer and would
+     * otherwise be aborted mid-call and retried. Shared by all agents.
+     */
+    private int callTimeoutSeconds = 180;
+
+    /**
+     * Retries per Bedrock call. Kept low: a call that exceeds {@link #callTimeoutSeconds} is
+     * expensive, and retrying it can blow the overall {@code review.timeout-seconds} budget. Shared
+     * by all agents.
+     */
+    private int maxRetries = 1;
+
     private final Agent risk = new Agent();
     private final Agent configuration = new Agent();
-    private final Agent traceability = new Agent();
+    private final Agent observability = new Agent();
     private final Agent synthesizer = new Agent();
+    private final Models models = new Models();
 
     public String getRegion() {
         return region;
@@ -28,6 +41,26 @@ public class BedrockProperties {
 
     public void setRegion(String region) {
         this.region = region;
+    }
+
+    public int getCallTimeoutSeconds() {
+        return callTimeoutSeconds;
+    }
+
+    public void setCallTimeoutSeconds(int callTimeoutSeconds) {
+        this.callTimeoutSeconds = callTimeoutSeconds;
+    }
+
+    public int getMaxRetries() {
+        return maxRetries;
+    }
+
+    public void setMaxRetries(int maxRetries) {
+        this.maxRetries = maxRetries;
+    }
+
+    public Models getModels() {
+        return models;
     }
 
     public Agent getRisk() {
@@ -38,22 +71,42 @@ public class BedrockProperties {
         return configuration;
     }
 
-    public Agent getTraceability() {
-        return traceability;
+    public Agent getObservability() {
+        return observability;
     }
 
     public Agent getSynthesizer() {
         return synthesizer;
     }
 
-    /** Resolved model ARN per agent, in a stable order — surfaced in the review response metadata. */
-    public Map<String, String> agentModelArns() {
-        Map<String, String> models = new LinkedHashMap<>();
-        models.put("risk", risk.getModelArn());
-        models.put("configuration", configuration.getModelArn());
-        models.put("traceability", traceability.getModelArn());
-        models.put("synthesizer", synthesizer.getModelArn());
-        return models;
+    /**
+     * Selectable model backends. Each agent's {@code modelArn} is the default/Claude profile;
+     * these ARNs let a request override which underlying model is invoked (see
+     * {@link com.github.evp2.langchain_api.model.ModelChoice}).
+     */
+    public static class Models {
+
+        /** Claude Sonnet inference-profile ARN (falls back to the shared INFERENCE_PROFILE_ARN). */
+        private String claudeSonnet;
+
+        /** NVIDIA Nemotron model id / ARN on Bedrock. */
+        private String nvidiaNemotron;
+
+        public String getClaudeSonnet() {
+            return claudeSonnet;
+        }
+
+        public void setClaudeSonnet(String claudeSonnet) {
+            this.claudeSonnet = claudeSonnet;
+        }
+
+        public String getNvidiaNemotron() {
+            return nvidiaNemotron;
+        }
+
+        public void setNvidiaNemotron(String nvidiaNemotron) {
+            this.nvidiaNemotron = nvidiaNemotron;
+        }
     }
 
     /** Per-agent, independently customizable model settings. */

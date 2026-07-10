@@ -2,12 +2,11 @@ package com.github.evp2.langchain_api.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.evp2.langchain_api.ai.ConfigurationAnalyst;
-import com.github.evp2.langchain_api.ai.RiskAnalyst;
 import com.github.evp2.langchain_api.ai.Synthesizer;
-import com.github.evp2.langchain_api.ai.TraceabilityAnalyst;
+import com.github.evp2.langchain_api.config.AgentRegistry;
 import com.github.evp2.langchain_api.config.BedrockProperties;
 import com.github.evp2.langchain_api.model.Dimension;
+import com.github.evp2.langchain_api.model.ModelChoice;
 import com.github.evp2.langchain_api.model.DimensionAnalysis;
 import com.github.evp2.langchain_api.model.DimensionResult;
 import com.github.evp2.langchain_api.model.Finding;
@@ -31,8 +30,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * Orchestrates a full code review: fetch the PR, run the three specialist reviewers
- * concurrently, synthesize a verdict, and assemble the API response. This is the
- * web-native counterpart to the radar {@code /code-review} skill's agent pipeline.
+ * concurrently, synthesize a verdict, and assemble the API response.
  */
 @Service
 public class CodeReviewService {
@@ -40,37 +38,31 @@ public class CodeReviewService {
     private static final Logger log = LoggerFactory.getLogger(CodeReviewService.class);
 
     private final GitHubPrService gitHub;
-    private final RiskAnalyst riskAnalyst;
-    private final ConfigurationAnalyst configurationAnalyst;
-    private final TraceabilityAnalyst traceabilityAnalyst;
-    private final Synthesizer synthesizer;
+    private final AgentRegistry agents;
     private final ExecutorService reviewExecutor;
     // Jackson 2 (bundled via langchain4j) — Spring Boot 4's managed ObjectMapper is Jackson 3.
     private final ObjectMapper mapper = new ObjectMapper();
+    // Parses model text into typed objects, tolerating markdown code fences the models may add.
+    private final JsonResponseParser parser = JsonResponseParser.create();
     private final int timeoutSeconds;
     private final BedrockProperties bedrockProperties;
 
     public CodeReviewService(
             GitHubPrService gitHub,
-            RiskAnalyst riskAnalyst,
-            ConfigurationAnalyst configurationAnalyst,
-            TraceabilityAnalyst traceabilityAnalyst,
-            Synthesizer synthesizer,
+            AgentRegistry agents,
             ExecutorService reviewExecutor,
             BedrockProperties bedrockProperties,
             @Value("${review.timeout-seconds}") int timeoutSeconds) {
         this.gitHub = gitHub;
-        this.riskAnalyst = riskAnalyst;
-        this.configurationAnalyst = configurationAnalyst;
-        this.traceabilityAnalyst = traceabilityAnalyst;
-        this.synthesizer = synthesizer;
+        this.agents = agents;
         this.reviewExecutor = reviewExecutor;
         this.bedrockProperties = bedrockProperties;
         this.timeoutSeconds = timeoutSeconds;
     }
 
-    public ReviewResponse review(String prUrl) {
+    public ReviewResponse review(String prUrl, ModelChoice model) {
         long start = System.currentTimeMillis();
+        AgentRegistry.Agents a = agents.forChoice(model);
         PullRequest pr = gitHub.fetch(prUrl);
 
         if (pr.diff() == null || pr.diff().isBlank()) {
@@ -81,13 +73,13 @@ public class CodeReviewService {
         // sink the whole review — it degrades to an empty analysis with a note.
         CompletableFuture<DimensionAnalysis> chrF = runSpecialist(
                 Dimension.CHANGE_RISK,
-                () -> riskAnalyst.analyze(pr.repository(), pr.number(), pr.title(), pr.diff()));
+                () -> analysis(a.risk().analyze(pr.repository(), pr.number(), pr.title(), pr.diff())));
         CompletableFuture<DimensionAnalysis> cfgF = runSpecialist(
                 Dimension.CONFIGURATION,
-                () -> configurationAnalyst.analyze(pr.repository(), pr.number(), pr.title(), pr.diff()));
+                () -> analysis(a.configuration().analyze(pr.repository(), pr.number(), pr.title(), pr.diff())));
         CompletableFuture<DimensionAnalysis> traF = runSpecialist(
                 Dimension.OBSERVABILITY,
-                () -> traceabilityAnalyst.analyze(pr.repository(), pr.number(), pr.title(), pr.diff()));
+                () -> analysis(a.observability().analyze(pr.repository(), pr.number(), pr.title(), pr.diff())));
 
         Outcome chrO = join(chrF, Dimension.CHANGE_RISK);
         Outcome cfgO = join(cfgF, Dimension.CONFIGURATION);
@@ -104,7 +96,7 @@ public class CodeReviewService {
         DimensionAnalysis cfg = cfgO.analysis();
         DimensionAnalysis tra = traO.analysis();
 
-        Synthesis synthesis = synthesize(pr, chr, cfg, tra);
+        Synthesis synthesis = synthesize(a.synthesizer(), pr, chr, cfg, tra);
 
         long duration = System.currentTimeMillis() - start;
         List<Finding> prioritized = prioritize(synthesis.prioritizedFindings());
@@ -114,8 +106,11 @@ public class CodeReviewService {
                 new DimensionResult(Dimension.CONFIGURATION, cfg.summary(), safe(cfg.findings())),
                 new DimensionResult(Dimension.OBSERVABILITY, tra.summary(), safe(tra.findings())));
 
+        String modelId = agents.modelId(model);
+        Map<String, String> agentModels = Map.of(
+                "risk", modelId, "configuration", modelId, "observability", modelId, "synthesizer", modelId);
         var meta = new ReviewResponse.ReviewMeta(
-                bedrockProperties.agentModelArns(), pr.changedFiles(), pr.diffTruncated(), duration);
+                agentModels, pr.changedFiles(), pr.diffTruncated(), duration);
 
         return new ReviewResponse(
                 prUrl,
@@ -130,6 +125,86 @@ public class CodeReviewService {
                 prioritized,
                 meta,
                 Instant.now());
+    }
+
+    /** Fetch the PR and run a single change-risk (CHR) specialist. */
+    public DimensionAnalysis analyzeChangeRisk(String prUrl, ModelChoice model) {
+        PullRequest pr = fetchForAnalysis(prUrl);
+        return callSpecialist(Dimension.CHANGE_RISK,
+                () -> analysis(agents.forChoice(model).risk()
+                        .analyze(pr.repository(), pr.number(), pr.title(), pr.diff())));
+    }
+
+    /** Fetch the PR and run a single configuration (CFG) specialist. */
+    public DimensionAnalysis analyzeConfiguration(String prUrl, ModelChoice model) {
+        PullRequest pr = fetchForAnalysis(prUrl);
+        return callSpecialist(Dimension.CONFIGURATION,
+                () -> analysis(agents.forChoice(model).configuration()
+                        .analyze(pr.repository(), pr.number(), pr.title(), pr.diff())));
+    }
+
+    /** Fetch the PR and run a single observability (ORA) specialist. */
+    public DimensionAnalysis analyzeObservability(String prUrl, ModelChoice model) {
+        PullRequest pr = fetchForAnalysis(prUrl);
+        return callSpecialist(Dimension.OBSERVABILITY,
+                () -> analysis(agents.forChoice(model).observability()
+                        .analyze(pr.repository(), pr.number(), pr.title(), pr.diff())));
+    }
+
+    /** Run the synthesizer on its own over caller-supplied specialist analyses. */
+    public Synthesis synthesizeOnly(com.github.evp2.langchain_api.model.SynthesisRequest request, ModelChoice model) {
+        DimensionAnalysis chr = orEmpty(request.changeRisk());
+        DimensionAnalysis cfg = orEmpty(request.configuration());
+        DimensionAnalysis tra = orEmpty(request.observability());
+        try {
+            return parser.parse(agents.forChoice(model).synthesizer().synthesize(
+                    request.repository(), request.number(), request.title(),
+                    toJson(chr), toJson(cfg), toJson(tra)), Synthesis.class);
+        } catch (Exception e) {
+            throw new ModelBackendException("Synthesizer failed: " + rootMessage(e));
+        }
+    }
+
+    /** Parse a specialist's raw JSON text into a normalized analysis (never-null findings). */
+    private DimensionAnalysis analysis(String rawJson) {
+        DimensionAnalysis parsed = parser.parse(rawJson, DimensionAnalysis.class);
+        return new DimensionAnalysis(parsed.summary(), safe(parsed.findings()));
+    }
+
+    /** Send a raw prompt straight to the selected model and return its text response. */
+    public String prompt(String prompt, ModelChoice model) {
+        try {
+            return agents.chatModel(model).chat(prompt);
+        } catch (Exception e) {
+            throw new ModelBackendException("Model call failed: " + rootMessage(e));
+        }
+    }
+
+    private PullRequest fetchForAnalysis(String prUrl) {
+        PullRequest pr = gitHub.fetch(prUrl);
+        if (pr.diff() == null || pr.diff().isBlank()) {
+            throw new IllegalStateException("Pull request diff is empty — nothing to review.");
+        }
+        return pr;
+    }
+
+    private DimensionAnalysis callSpecialist(Dimension dim, Supplier<DimensionAnalysis> call) {
+        log.info("Running {} specialist (single-agent endpoint)", dim);
+        try {
+            DimensionAnalysis result = call.get();
+            log.info("{} specialist produced {} findings", dim,
+                    result.findings() == null ? 0 : result.findings().size());
+            return new DimensionAnalysis(result.summary(), safe(result.findings()));
+        } catch (Exception e) {
+            throw new ModelBackendException(dim + " analysis failed: " + rootMessage(e));
+        }
+    }
+
+    private static DimensionAnalysis orEmpty(DimensionAnalysis d) {
+        if (d == null) {
+            return new DimensionAnalysis("(not provided)", List.of());
+        }
+        return new DimensionAnalysis(d.summary(), safe(d.findings()));
     }
 
     /** A specialist result plus whether it failed at the backend (failure == null means success). */
@@ -163,11 +238,12 @@ public class CodeReviewService {
         }
     }
 
-    private Synthesis synthesize(PullRequest pr, DimensionAnalysis chr, DimensionAnalysis cfg, DimensionAnalysis tra) {
+    private Synthesis synthesize(Synthesizer synthesizer, PullRequest pr,
+            DimensionAnalysis chr, DimensionAnalysis cfg, DimensionAnalysis tra) {
         try {
-            return synthesizer.synthesize(
+            return parser.parse(synthesizer.synthesize(
                     pr.repository(), pr.number(), pr.title(),
-                    toJson(chr), toJson(cfg), toJson(tra));
+                    toJson(chr), toJson(cfg), toJson(tra)), Synthesis.class);
         } catch (Exception e) {
             log.warn("Synthesizer failed, falling back to a merged verdict: {}", e.getMessage());
             return fallbackSynthesis(chr, cfg, tra);
@@ -175,7 +251,7 @@ public class CodeReviewService {
     }
 
     /** If the synthesizer model call fails, derive a defensible verdict from raw findings. */
-    private Synthesis fallbackSynthesis(DimensionAnalysis chr, DimensionAnalysis cfg, DimensionAnalysis tra) {
+    static Synthesis fallbackSynthesis(DimensionAnalysis chr, DimensionAnalysis cfg, DimensionAnalysis tra) {
         List<Finding> all = prioritize(java.util.stream.Stream.of(chr, cfg, tra)
                 .flatMap(d -> safe(d.findings()).stream())
                 .toList());
@@ -202,17 +278,17 @@ public class CodeReviewService {
         }
     }
 
-    private static List<Finding> prioritize(List<Finding> findings) {
+    static List<Finding> prioritize(List<Finding> findings) {
         return safe(findings).stream()
                 .sorted(Comparator.comparingInt(f -> severityRank(f.severity())))
                 .toList();
     }
 
-    private static int severityRank(Severity s) {
+    static int severityRank(Severity s) {
         return s == null ? Integer.MAX_VALUE : s.ordinal();
     }
 
-    private static Map<Severity, Integer> severityCounts(List<Finding> findings) {
+    static Map<Severity, Integer> severityCounts(List<Finding> findings) {
         Map<Severity, Integer> counts = new EnumMap<>(Severity.class);
         for (Severity s : Severity.values()) {
             counts.put(s, 0);
@@ -229,7 +305,7 @@ public class CodeReviewService {
         return findings == null ? List.of() : findings;
     }
 
-    private static String rootMessage(Throwable t) {
+    static String rootMessage(Throwable t) {
         Throwable c = t;
         while (c.getCause() != null && c.getCause() != c) {
             c = c.getCause();

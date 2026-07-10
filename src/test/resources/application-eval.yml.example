@@ -1,0 +1,30 @@
+# Template for the live eval config. Copy to `application-eval.yml` (gitignored — it holds
+# account-specific ARNs) and fill in your Bedrock inference-profile ARNs.
+#
+# Activated by LiveAgentEvalTest (Spring profile "eval"), which is tagged "eval" and excluded
+# from the default build; opt in with `./gradlew test -PincludeEvals`. AWS credentials come from
+# the default credential chain — only non-secret model config lives here.
+
+# Skip the startup STS GetCallerIdentity check; the eval calls Bedrock directly.
+aws:
+  health-check:
+    enabled: false
+
+bedrock:
+  region: us-east-1
+  models:
+    claude-sonnet: arn:aws:bedrock:us-east-1:<ACCOUNT_ID>:application-inference-profile/<PROFILE_ID>
+    # Only used with -Deval.model=NVIDIA_NEMOTRON.
+    nvidia-nemotron: nvidia.nemotron-super-3-120b
+  risk:
+    model-arn: arn:aws:bedrock:us-east-1:<ACCOUNT_ID>:application-inference-profile/<PROFILE_ID>
+    max-output-tokens: 8192
+  configuration:
+    model-arn: arn:aws:bedrock:us-east-1:<ACCOUNT_ID>:application-inference-profile/<PROFILE_ID>
+    max-output-tokens: 8192
+  observability:
+    model-arn: arn:aws:bedrock:us-east-1:<ACCOUNT_ID>:application-inference-profile/<PROFILE_ID>
+    max-output-tokens: 8192
+  synthesizer:
+    model-arn: arn:aws:bedrock:us-east-1:<ACCOUNT_ID>:application-inference-profile/<PROFILE_ID>
+    max-output-tokens: 8192

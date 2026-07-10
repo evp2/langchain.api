@@ -1,0 +1,24 @@
+```json
+{
+  "verdict": "NO_GO",
+  "executiveSummary": "The migration irreversibly drops a column that a rollback of the application would still read, making the release unsafe to ship as one unit. Split the reader removal and the column drop into separate releases. The remaining findings are fixable follow-ups.",
+  "prioritizedFindings": [
+    {
+      "id": "CHR-001",
+      "severity": "CRITICAL",
+      "title": "Irreversible column drop while old readers may still be deployed",
+      "description": "V42 drops orders.legacy_status in the same release that removes its last reader; rolling back the app leaves it reading a missing column.",
+      "file": "db/migration/V42__drop_legacy_status.sql",
+      "recommendation": "Split into two releases: stop reading the column first, then drop it."
+    },
+    {
+      "id": "CHR-002",
+      "severity": "MEDIUM",
+      "title": "orElseThrow with no not-found handling",
+      "description": "view() now throws NoSuchElementException for unknown ids, surfacing as a 500.",
+      "file": "src/main/java/com/shop/orders/OrderService.java",
+      "recommendation": "Map missing orders to a 404."
+    }
+  ]
+}
+```

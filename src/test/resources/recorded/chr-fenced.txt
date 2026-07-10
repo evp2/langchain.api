@@ -1,0 +1,23 @@
+```json
+{
+  "summary": "The change removes the timeout and retry protection from an external payment call, introducing a significant availability risk on a money path.",
+  "findings": [
+    {
+      "id": "CHR-001",
+      "severity": "HIGH",
+      "title": "External charge call has no timeout",
+      "description": "HttpRequest is built without .timeout(); a slow or hung payment provider now blocks the calling thread indefinitely, exhausting the request pool under load.",
+      "file": "src/main/java/com/shop/payments/PaymentClient.java",
+      "recommendation": "Restore the 10s request timeout on the HttpRequest builder."
+    },
+    {
+      "id": "CHR-002",
+      "severity": "MEDIUM",
+      "title": "Retry with backoff removed on a transient-failure-prone path",
+      "description": "The 3-attempt retry loop was deleted, so any transient IOException now fails the charge outright.",
+      "file": "src/main/java/com/shop/payments/PaymentClient.java",
+      "recommendation": "Reinstate bounded retries with backoff, or document that the caller retries."
+    }
+  ]
+}
+```

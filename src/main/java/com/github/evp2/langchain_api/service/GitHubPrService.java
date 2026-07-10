@@ -3,6 +3,8 @@ package com.github.evp2.langchain_api.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.ProxySelector;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -12,6 +14,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -29,22 +32,55 @@ public class GitHubPrService {
     private static final Pattern PR_URL = Pattern.compile(
             "github\\.com/([^/\\s]+)/([^/\\s]+)/pull/(\\d+)");
 
-    private final HttpClient http = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(15))
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
+    private final HttpClient http;
     // Jackson 2 (bundled via langchain4j) — Spring Boot 4's managed ObjectMapper is Jackson 3.
     private final ObjectMapper mapper = new ObjectMapper();
     private final int maxDiffChars;
+    private final String baseUrl;
     private final String token;
 
-    public GitHubPrService(@Value("${review.max-diff-chars}") int maxDiffChars) {
+    @Autowired
+    public GitHubPrService(
+            @Value("${review.max-diff-chars}") int maxDiffChars,
+            @Value("${github.api-base-url:https://api.github.com}") String baseUrl) {
+        this(maxDiffChars, baseUrl, buildClient(), envToken());
+    }
+
+    GitHubPrService(int maxDiffChars, String baseUrl, HttpClient http, String token) {
         this.maxDiffChars = maxDiffChars;
+        this.baseUrl = baseUrl;
+        this.http = http;
+        this.token = (token == null || token.isBlank()) ? null : token.trim();
+    }
+
+    private static String envToken() {
         String t = System.getenv("GITHUB_TOKEN");
         if (t == null || t.isBlank()) {
             t = System.getenv("GH_TOKEN");
         }
-        this.token = (t == null || t.isBlank()) ? null : t.trim();
+        return t;
+    }
+
+    /**
+     * GitHub is external, so on a corporate network it is only reachable through the egress proxy.
+     * Bedrock (*.amazonaws.com) is in NO_PROXY and must stay direct, so the proxy is scoped to this
+     * client rather than set as a JVM-wide default. Honors the standard HTTPS_PROXY / https_proxy env var.
+     */
+    private static HttpClient buildClient() {
+        HttpClient.Builder b = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(15))
+                .followRedirects(HttpClient.Redirect.NORMAL);
+        String proxy = System.getenv("HTTPS_PROXY");
+        if (proxy == null || proxy.isBlank()) {
+            proxy = System.getenv("https_proxy");
+        }
+        if (proxy != null && !proxy.isBlank()) {
+            URI u = URI.create(proxy.trim());
+            int port = u.getPort() != -1 ? u.getPort() : 443;
+            b.proxy(ProxySelector.of(new InetSocketAddress(u.getHost(), port)));
+            log.info("GitHub client using HTTPS proxy {}:{}", u.getHost(), port);
+        }
+        return b.build();
     }
 
     /** Parse the PR URL, then fetch its metadata and diff. */
@@ -58,7 +94,7 @@ public class GitHubPrService {
         String repo = m.group(2);
         int number = Integer.parseInt(m.group(3));
 
-        String apiUrl = "https://api.github.com/repos/" + owner + "/" + repo + "/pulls/" + number;
+        String apiUrl = baseUrl + "/repos/" + owner + "/" + repo + "/pulls/" + number;
 
         JsonNode meta = getJson(apiUrl, owner, repo, number);
         String title = meta.path("title").asText("(untitled)");
@@ -96,7 +132,7 @@ public class GitHubPrService {
                 .timeout(Duration.ofSeconds(30))
                 .header("Accept", accept)
                 .header("X-GitHub-Api-Version", "2022-11-28")
-                .header("User-Agent", "langchain-api-radar-review")
+                .header("User-Agent", "langchain-api-review")
                 .GET();
         if (token != null) {
             req.header("Authorization", "Bearer " + token);

@@ -1,4 +1,14 @@
 HELP.md
+
+### Local eval config (contains account-specific Bedrock ARNs) ###
+src/test/resources/application-eval.yml
+
+### Eval harness (fixtures, labels, promptfoo trial) — kept local ###
+evals/
+
+### Claude Code local config ###
+.claude/
+
 .gradle
 build/
 !gradle/wrapper/gradle-wrapper.jar

@@ -4,13 +4,19 @@ import com.github.evp2.langchain_api.model.ErrorResponse;
 import com.github.evp2.langchain_api.service.ModelBackendException;
 import com.github.evp2.langchain_api.service.PullRequestNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /** Maps service/domain exceptions to clean JSON error responses. */
 @RestControllerAdvice
@@ -32,6 +38,21 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleBackend(ModelBackendException e) {
         log.warn("Model backend failure: {}", e.getMessage());
         return build(HttpStatus.BAD_GATEWAY, e.getMessage());
+    }
+
+    /**
+     * Request-level errors (bean validation, missing/mistyped params) must stay 400s — without
+     * this, the catch-all handler below would misreport them as 502 backend failures.
+     */
+    @ExceptionHandler({
+            MethodArgumentNotValidException.class,
+            HandlerMethodValidationException.class,
+            ConstraintViolationException.class,
+            MissingServletRequestParameterException.class,
+            MethodArgumentTypeMismatchException.class,
+            HttpMessageNotReadableException.class})
+    public ResponseEntity<ErrorResponse> handleInvalidRequest(Exception e) {
+        return build(HttpStatus.BAD_REQUEST, e.getMessage());
     }
 
     @ExceptionHandler(Exception.class)

@@ -1,6 +1,6 @@
 package com.github.evp2.langchain_api.model;
 
-/** Overall deployment decision for the PR, mirroring the radar code-review skill. */
+/** Overall deployment decision for the PR. */
 public enum Verdict {
     /** Safe to merge / deploy. */
     GO,
