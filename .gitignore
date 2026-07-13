@@ -9,6 +9,9 @@ evals/
 ### Claude Code local config ###
 .claude/
 
+### pr-review skill runtime artifacts (diffs, prompts, reports) ###
+.pr-review/
+
 .gradle
 build/
 !gradle/wrapper/gradle-wrapper.jar

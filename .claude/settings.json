@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew test)",
+      "Bash(./gradlew test *)",
+      "Bash(aws sts get-caller-identity)",
+      "Bash(aws s3 ls *)",
+      "Bash(gh auth token)",
+      "Bash(aws dynamodb describe-table *)",
+      "Bash(aws bedrock list-inference-profiles *)",
+      "Bash(aws dynamodb query *)",
+      "Bash(aws dynamodb scan *)",
+      "Bash(aws cloudformation describe-stacks *)",
+      "Bash(aws cloudformation validate-template *)",
+      "Bash(unzip -l *)",
+      "Bash(javap *)"
+    ]
+  }
+}

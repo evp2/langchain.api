@@ -1,6 +1,22 @@
 spring:
   application:
     name: langchain.api
+  # ---- MCP server (Spring AI) ----
+  # Exposes the review services as MCP tools (see mcp/ReviewMcpTools) over Streamable-HTTP at the
+  # default /mcp endpoint, on this same servlet port. Lets MCP clients (Claude Code / Desktop, IDE
+  # agents) invoke analyze_pr / submit_review / get_review / synthesize as tools.
+  ai:
+    mcp:
+      server:
+        name: langchain-review
+        version: 0.0.1
+        protocol: STREAMABLE   # current MCP standard (SSE is deprecated in Spring AI 2.0)
+        type: SYNC             # tools call blocking services
+        instructions: >
+          Resiliency-focused multi-agent review of a GitHub pull request (change-risk,
+          configuration, observability) producing a GO / CONDITIONAL / NO_GO verdict.
+        annotation-scanner:
+          enabled: true
 
 server:
   port: 8080
