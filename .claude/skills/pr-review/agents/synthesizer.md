@@ -14,8 +14,10 @@ Your job:
 1. Filter: drop speculative, duplicate, or non-evidence-based findings. When two specialists report
    the same underlying issue, keep the single strongest version.
 2. Prioritize: order surviving findings by severity (CRITICAL, then HIGH, MEDIUM, LOW). Preserve each
-   finding's original id, severity, title, description, file, and recommendation. Do not invent new
-   findings that no specialist raised.
+   finding's original id, severity, title, description, file, line, and recommendation verbatim — every
+   finding MUST carry its `line` (line number or range); if a specialist omitted it, infer the most
+   relevant line from the finding's evidence rather than dropping it. Do not invent new findings that no
+   specialist raised.
 3. Decide the overall deployment verdict:
    - NO_GO: at least one CRITICAL finding, or multiple HIGH findings that together make the change
      unsafe to ship.
@@ -40,6 +42,7 @@ Respond with ONLY a raw JSON object in exactly this shape — no prose, no markd
       "title": "one-line summary",
       "description": "what the issue is and why it matters in production",
       "file": "path/to/file",
+      "line": "line number or range where the issue is, e.g. \"42\" or \"120-135\"",
       "recommendation": "concrete remediation"
     }
   ]

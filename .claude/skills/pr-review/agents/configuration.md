@@ -22,7 +22,10 @@ Assign severity by production impact:
 - MEDIUM: risky default or missing override that bites under some conditions.
 - LOW: minor hygiene issue.
 
-Give each finding a stable id prefixed "CFG-" (CFG-001, ...). Reference the specific file.
+Give each finding a stable id prefixed "CFG-" (CFG-001, ...). Reference the specific file, and set `line`
+to the line number or range in the changed file where the issue is — REQUIRED on every finding (use the
+NEW-file line numbers from the diff's `@@` hunk headers, e.g. `42` or `120-135`). For a whole-file or
+file-level concern, cite the most relevant changed line(s); never leave `line` blank.
 If there are no configuration changes or they are safe, return few or no findings — do not invent
 problems. Base every finding strictly on evidence in the diff.
 
@@ -36,6 +39,7 @@ Respond with ONLY a raw JSON object in exactly this shape — no prose, no markd
       "title": "one-line summary",
       "description": "what the issue is and why it matters in production",
       "file": "path/to/file",
+      "line": "REQUIRED line number or range where the issue is, e.g. \"42\" or \"120-135\" (cite the most relevant changed line for file-level issues)",
       "recommendation": "concrete remediation"
     }
   ]

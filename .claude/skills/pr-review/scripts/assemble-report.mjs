@@ -118,22 +118,52 @@ function contextDesc(mt) {
 
 const cell = (v) => String(v == null ? '' : v).replace(/\|/g, '\\|').replace(/\n+/g, ' ').trim();
 const sha12 = (s) => (s ? String(s).slice(0, 12) : '(unknown)');
-
-/** The prioritized summary table: every finding from every dimension, most-severe first. */
-function findingsTable(findings) {
-  if (!findings.length) return '_No findings._\n';
-  const rows = findings.map((f) => `| ${cell(f.id)} | ${cell(f.severity)} | ${cell(f.title)} | ${cell(f.file)} |`);
-  return ['| ID | Severity | Title | File |', '|----|----------|-------|------|', ...rows].join('\n') + '\n';
-}
+// A finding's location as `file:line` (line is required in the schema, but render defensively so a
+// model that omits it still yields a clean `file`).
+const fileLoc = (f) => {
+  const file = f && f.file != null ? String(f.file).trim() : '';
+  const line = f && f.line != null ? String(f.line).trim() : '';
+  return line ? `${file}:${line}` : file;
+};
 
 const sevLine = SEV_ORDER.map((s) => `${s}: ${counts[s]}`).join('  ·  ');
 const mt = review.meta;
 const lines = [];
+// Resolvable GitHub links for finding locations; repo base URL derived from the PR URL.
+const repoUrl = String(review.prUrl || '').replace(/\/pull\/\d+.*$/, '');
+// GitHub line anchor for a finding's line/range: "42" -> "#L42", "120-135" -> "#L120-L135"; "" for anything else.
+const lineAnchor = (line) => {
+  const m = /^(\d+)(?:\s*-\s*(\d+))?$/.exec(String(line == null ? '' : line).trim());
+  if (!m) return '';
+  return m[2] ? `#L${m[1]}-L${m[2]}` : `#L${m[1]}`;
+};
+// File column as a resolvable GitHub blob link at the REVIEWED head commit (so the line numbers match
+// what was reviewed); falls back to a plain `file:line` code span when repoUrl / headSha is unavailable.
+const fileLink = (f) => {
+  const file = f && f.file != null ? String(f.file).trim() : '';
+  if (repoUrl && mt.headSha && file) {
+    return `[\`${cell(fileLoc(f))}\`](${repoUrl}/blob/${mt.headSha}/${encodeURI(file)}${lineAnchor(f && f.line)})`;
+  }
+  return `\`${cell(fileLoc(f))}\``;
+};
 
-// 1. Header section
-lines.push(`# PR Resiliency Review — ${review.verdict}`);
+/** The prioritized summary table: every finding from every dimension, most-severe first. */
+function findingsTable(findings) {
+  if (!findings.length) return '_No findings._\n';
+  const rows = findings.map((f) => `| ${cell(f.id)} | ${cell(f.severity)} | ${fileLink(f)} | ${cell(f.title)} |`);
+  return ['| ID | Severity | File | Title |', '|----|----------|------|-------|', ...rows].join('\n') + '\n';
+}
+
+// 1. Executive summary — lead with the verdict rationale, up top
+lines.push(`# Code Resiliency Review — ${review.verdict}`);
 lines.push('');
-lines.push(`## Header`);
+lines.push('## Executive Summary');
+lines.push('');
+lines.push(review.executiveSummary || '_(none)_');
+lines.push('');
+
+// 2. Context — PR metadata (formerly the "Header" section, moved below the summary)
+lines.push(`## Context`);
 lines.push('');
 lines.push('| Field | Value |');
 lines.push('|-------|-------|');
@@ -146,20 +176,16 @@ lines.push(`| Baseline commit | \`${sha12(mt.baseSha)}\` |`);
 lines.push(`| Verdict | **${review.verdict}** |`);
 lines.push(`| Findings | ${review.totalFindings} — ${sevLine} |`);
 lines.push(`| Files changed | ${mt.changedFiles}  ·  Diff: ${mt.diffChars} chars |`);
-lines.push(`| Context | ${contextDesc(mt)} |`);
+lines.push(`| Grounding | ${contextDesc(mt)} |`);
 lines.push(`| LLM model | ${cell(mt.agentModels?.synthesizer || meta.modelLabel)} |`);
 lines.push('');
-lines.push('### Executive Summary');
-lines.push('');
-lines.push(review.executiveSummary || '_(none)_');
-lines.push('');
 
-// 2. Prioritized findings — all findings, all dimensions, most-severe first
+// 3. Prioritized findings — all findings, all dimensions, most-severe first
 lines.push('## Prioritized Findings');
 lines.push('');
 lines.push(findingsTable(prioritized));
 
-// 3. Detailed findings — full description + recommendation per finding
+// 4. Detailed findings — full description + recommendation per finding
 lines.push('## Detailed Findings');
 lines.push('');
 if (!prioritized.length) {
@@ -169,7 +195,7 @@ if (!prioritized.length) {
   for (const f of prioritized) {
     lines.push(`### ${cell(f.id)} · ${cell(f.severity)} — ${cell(f.title)}`);
     lines.push('');
-    lines.push(`- **File:** \`${cell(f.file)}\``);
+    lines.push(`- **File:** ${fileLink(f)}`);
     lines.push(`- **Severity:** ${cell(f.severity)}`);
     lines.push('');
     lines.push('**What & why**');
@@ -183,7 +209,7 @@ if (!prioritized.length) {
   }
 }
 
-// 4. End of report
+// 5. End of report
 lines.push('## End of Report');
 lines.push('');
 lines.push(`- **Verdict:** ${review.verdict}`);
@@ -192,7 +218,7 @@ lines.push(`- **Dimensions:** ${review.dimensions.map((d) => `${DIM_LABEL[d.dime
 lines.push(`- **Model:** ${cell(meta.modelLabel)}  ·  **Duration:** ${durationMillis} ms  ·  **Generated:** ${review.generatedAt}`);
 lines.push('');
 lines.push('---');
-lines.push(`_Multi-agent PR resiliency review._`);
+lines.push(`_Multi-agent code resiliency review._`);
 lines.push('');
 fs.writeFileSync(path.join(outputDir, 'report.md'), lines.join('\n'));
 
