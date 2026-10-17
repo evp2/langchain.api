@@ -54,7 +54,7 @@ public class CodeReviewController {
     public ResponseEntity<ReviewJob> submit(
             @Parameter(
                     description = "Full GitHub pull request URL",
-                    example = "https://github.com/Vanguard/resiliency-agent.ecs/pull/228",
+                    example = "https://github.com/OWNER/REPO/pull/123",
                     required = true)
             @RequestParam("prUrl") @NotBlank String prUrl,
             @Parameter(description = "Which model backend to invoke")

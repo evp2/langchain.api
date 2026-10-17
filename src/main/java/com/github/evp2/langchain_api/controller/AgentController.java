@@ -50,7 +50,7 @@ public class AgentController {
     @PostMapping("/change-risk")
     public DimensionAnalysis changeRisk(
             @Parameter(description = "Full GitHub pull request URL",
-                    example = "https://github.com/Vanguard/resiliency-agent.ecs/pull/228", required = true)
+                    example = "https://github.com/OWNER/REPO/pull/123", required = true)
             @RequestParam("prUrl") @NotBlank String prUrl,
             @Parameter(description = "Which model backend to invoke")
             @RequestParam(value = "model", defaultValue = "CLAUDE_SONNET") ModelChoice model) {
@@ -72,7 +72,7 @@ public class AgentController {
     @PostMapping("/configuration")
     public DimensionAnalysis configuration(
             @Parameter(description = "Full GitHub pull request URL",
-                    example = "https://github.com/Vanguard/resiliency-agent.ecs/pull/228", required = true)
+                    example = "https://github.com/OWNER/REPO/pull/123", required = true)
             @RequestParam("prUrl") @NotBlank String prUrl,
             @Parameter(description = "Which model backend to invoke")
             @RequestParam(value = "model", defaultValue = "CLAUDE_SONNET") ModelChoice model) {
@@ -94,7 +94,7 @@ public class AgentController {
     @PostMapping("/observability")
     public DimensionAnalysis observability(
             @Parameter(description = "Full GitHub pull request URL",
-                    example = "https://github.com/Vanguard/resiliency-agent.ecs/pull/228", required = true)
+                    example = "https://github.com/OWNER/REPO/pull/123", required = true)
             @RequestParam("prUrl") @NotBlank String prUrl,
             @Parameter(description = "Which model backend to invoke")
             @RequestParam(value = "model", defaultValue = "CLAUDE_SONNET") ModelChoice model) {
